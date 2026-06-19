@@ -1,6 +1,5 @@
-FROM gcc:latest
+FROM gcc:13
 WORKDIR /app
 COPY . .
-RUN apt-get update && apt-get install -y cmake
-RUN mkdir build && cd build && cmake .. && make
-CMD ["./build/main"]
+RUN g++ -std=c++17 -o app src/main.cpp
+CMD ["./app"]
