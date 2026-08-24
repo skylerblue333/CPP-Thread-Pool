@@ -1,55 +1,51 @@
-#include <iostream>
+#include "sky/thread_pool.hpp"
+
 #include <atomic>
 #include <cassert>
-#include <vector>
-#include <queue>
+#include <chrono>
+#include <future>
+#include <stdexcept>
 #include <thread>
-#include <mutex>
-#include <functional>
-#include <condition_variable>
-
-class ThreadPool {
-public:
-    ThreadPool(size_t n) : stop(false) {
-        for (size_t i = 0; i < n; ++i) {
-            workers.emplace_back([this] {
-                while (true) {
-                    std::function<void()> task;
-                    {
-                        std::unique_lock<std::mutex> lock(queue_mutex);
-                        condition.wait(lock, [this] { return stop || !tasks.empty(); });
-                        if (stop && tasks.empty()) return;
-                        task = std::move(tasks.front());
-                        tasks.pop();
-                    }
-                    task();
-                }
-            });
-        }
-    }
-    void enqueue(std::function<void()> task) {
-        { std::unique_lock<std::mutex> lock(queue_mutex); tasks.push(std::move(task)); }
-        condition.notify_one();
-    }
-    ~ThreadPool() {
-        { std::unique_lock<std::mutex> lock(queue_mutex); stop = true; }
-        condition.notify_all();
-        for (auto& w : workers) w.join();
-    }
-private:
-    std::vector<std::thread> workers;
-    std::queue<std::function<void()>> tasks;
-    std::mutex queue_mutex;
-    std::condition_variable condition;
-    std::atomic<bool> stop;
-};
+#include <vector>
 
 int main() {
-    ThreadPool pool(2);
-    std::atomic<int> count{0};
-    for (int i = 0; i < 10; ++i) pool.enqueue([&count] { count++; });
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    assert(count.load() == 10);
-    std::cout << "All thread pool tests passed!\n";
+    {
+        sky::ThreadPool pool(3, 8);
+        std::vector<std::future<int>> results;
+        for (int i = 0; i < 50; ++i) {
+            results.push_back(pool.submit([i] { return i + 1; }));
+        }
+        long sum = 0;
+        for (auto& result : results) {
+            sum += result.get();
+        }
+        assert(sum == 1275);
+        pool.wait_idle();
+        assert(pool.queued() == 0);
+        assert(pool.worker_count() == 3);
+    }
+
+    {
+        sky::ThreadPool pool(2, 2);
+        auto failure = pool.submit([]() -> int { throw std::runtime_error("task failure"); });
+        bool propagated = false;
+        try {
+            (void)failure.get();
+        } catch (const std::runtime_error&) {
+            propagated = true;
+        }
+        assert(propagated);
+    }
+
+    {
+        bool rejected = false;
+        try {
+            sky::ThreadPool invalid(0);
+        } catch (const std::invalid_argument&) {
+            rejected = true;
+        }
+        assert(rejected);
+    }
+
     return 0;
 }
