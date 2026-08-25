@@ -1,11 +1,8 @@
 #include "sky/thread_pool.hpp"
 
-#include <atomic>
-#include <cassert>
-#include <chrono>
 #include <future>
+#include <iostream>
 #include <stdexcept>
-#include <thread>
 #include <vector>
 
 int main() {
@@ -19,10 +16,11 @@ int main() {
         for (auto& result : results) {
             sum += result.get();
         }
-        assert(sum == 1275);
         pool.wait_idle();
-        assert(pool.queued() == 0);
-        assert(pool.worker_count() == 3);
+        if (sum != 1275 || pool.queued() != 0 || pool.worker_count() != 3) {
+            std::cerr << "execution invariant failed\n";
+            return 1;
+        }
     }
 
     {
@@ -34,7 +32,10 @@ int main() {
         } catch (const std::runtime_error&) {
             propagated = true;
         }
-        assert(propagated);
+        if (!propagated) {
+            std::cerr << "task exception was not propagated\n";
+            return 1;
+        }
     }
 
     {
@@ -44,8 +45,12 @@ int main() {
         } catch (const std::invalid_argument&) {
             rejected = true;
         }
-        assert(rejected);
+        if (!rejected) {
+            std::cerr << "zero-worker configuration was accepted\n";
+            return 1;
+        }
     }
 
+    std::cout << "Sky Thread Pool tests passed\n";
     return 0;
 }
