@@ -1,9 +1,34 @@
-name: CI
-on: [push, pull_request]
+name: thread-pool-ci
+
+on:
+  push:
+    branches: [main, "product/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
 jobs:
-  build:
+  verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - run: g++ -std=c++17 -o app src/main.cpp && echo 'Build OK'
-      - run: g++ -std=c++17 -o test_app tests/test_main.cpp && ./test_app
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Tests
+        run: ctest --test-dir build --output-on-failure
+      - name: Demo smoke test
+        run: ./build/sky-thread-pool-demo
+      - name: Sanitizer build
+        run: |
+          cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'
+          cmake --build build-asan --parallel 2
+          ctest --test-dir build-asan --output-on-failure
+      - name: Build image
+        run: docker build -t sky-thread-pool:${{ github.sha }} .
+      - name: Verify non-root image
+        run: test "$(docker run --rm --entrypoint id sky-thread-pool:${{ github.sha }} -u)" != "0"
+      - name: Container smoke test
+        run: docker run --rm sky-thread-pool:${{ github.sha }}

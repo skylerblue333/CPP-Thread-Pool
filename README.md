@@ -1,30 +1,37 @@
-# CPP-Thread-Pool
+# Sky Thread Pool
 
-A focused C++ thread-pool implementation intended as a reusable concurrency component in the SKYCOIN4444 ecosystem.
+A bounded C++20 thread-pool primitive for local concurrent workloads in the SKYCOIN4444 engineering portfolio.
 
-## Current evidence
+## Implemented
 
-- C++ source and a test file are present in the repository.
-- The repository also contains CI/build configuration.
-- The existing implementation remains the source of truth for supported behavior.
+- Fixed worker count with constructor validation.
+- Bounded pending-task queue with producer backpressure.
+- `submit` returns `std::future` and propagates task exceptions.
+- Deterministic `wait_idle()` and draining shutdown behavior.
+- Copy/move disabled to make ownership explicit.
+- CMake interface target for reuse plus a small executable demonstration.
+- Deterministic tests covering execution, exception propagation, queue draining, and invalid configuration.
+- Release build, warnings-as-errors, tests, ASan/UBSan verification, container build, non-root check, and container smoke test in GitHub Actions.
 
-## Ecosystem role
+## Build
 
-**Supporting Services → Concurrency / Compute**
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+./build/sky-thread-pool-demo
+```
 
-This capability may be integrated into a larger worker, compute, or event-processing boundary when benchmarks and interface compatibility justify it. It should not become a standalone microservice merely because the repository exists.
+## Product boundary
 
-## Status
+Status: **engineering beta**.
 
-- Implementation: **present**
-- Canonical integration: **pending comparison with other worker/concurrency implementations**
-- Automated validation: **not claimed here without current CI/test evidence**
-- Production readiness: **not claimed**
+This repository is a process-local concurrency library. It does not claim distributed job execution, durable queues, work stealing, CPU affinity management, cancellation tokens, priority scheduling, real-time guarantees, production deployment, or benchmarked capacity. Those capabilities require separate implementation and evidence.
 
-## Consolidation policy
+## SKYCOIN4444 integration role
 
-Before changing this repository, preserve the existing implementation and tests. If a mature open-source concurrency primitive better satisfies a documented requirement, evaluate it rather than duplicating functionality. Preserve applicable licenses and attribution when adopting third-party code.
+Use this component inside native workers or compute-oriented services that need bounded local concurrency. Network queues, durable orchestration, and cross-node scheduling belong in separate product boundaries.
 
 ## License
 
-See the repository's existing license and source files for applicable terms.
+See `LICENSE`.

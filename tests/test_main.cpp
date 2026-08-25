@@ -1,55 +1,56 @@
-#include <iostream>
-#include <atomic>
-#include <cassert>
-#include <vector>
-#include <queue>
-#include <thread>
-#include <mutex>
-#include <functional>
-#include <condition_variable>
+#include "sky/thread_pool.hpp"
 
-class ThreadPool {
-public:
-    ThreadPool(size_t n) : stop(false) {
-        for (size_t i = 0; i < n; ++i) {
-            workers.emplace_back([this] {
-                while (true) {
-                    std::function<void()> task;
-                    {
-                        std::unique_lock<std::mutex> lock(queue_mutex);
-                        condition.wait(lock, [this] { return stop || !tasks.empty(); });
-                        if (stop && tasks.empty()) return;
-                        task = std::move(tasks.front());
-                        tasks.pop();
-                    }
-                    task();
-                }
-            });
-        }
-    }
-    void enqueue(std::function<void()> task) {
-        { std::unique_lock<std::mutex> lock(queue_mutex); tasks.push(std::move(task)); }
-        condition.notify_one();
-    }
-    ~ThreadPool() {
-        { std::unique_lock<std::mutex> lock(queue_mutex); stop = true; }
-        condition.notify_all();
-        for (auto& w : workers) w.join();
-    }
-private:
-    std::vector<std::thread> workers;
-    std::queue<std::function<void()>> tasks;
-    std::mutex queue_mutex;
-    std::condition_variable condition;
-    std::atomic<bool> stop;
-};
+#include <future>
+#include <iostream>
+#include <stdexcept>
+#include <vector>
 
 int main() {
-    ThreadPool pool(2);
-    std::atomic<int> count{0};
-    for (int i = 0; i < 10; ++i) pool.enqueue([&count] { count++; });
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    assert(count.load() == 10);
-    std::cout << "All thread pool tests passed!\n";
+    {
+        sky::ThreadPool pool(3, 8);
+        std::vector<std::future<int>> results;
+        for (int i = 0; i < 50; ++i) {
+            results.push_back(pool.submit([i] { return i + 1; }));
+        }
+        long sum = 0;
+        for (auto& result : results) {
+            sum += result.get();
+        }
+        pool.wait_idle();
+        if (sum != 1275 || pool.queued() != 0 || pool.worker_count() != 3) {
+            std::cerr << "execution invariant failed\n";
+            return 1;
+        }
+    }
+
+    {
+        sky::ThreadPool pool(2, 2);
+        auto failure = pool.submit([]() -> int { throw std::runtime_error("task failure"); });
+        bool propagated = false;
+        try {
+            (void)failure.get();
+        } catch (const std::runtime_error&) {
+            propagated = true;
+        }
+        if (!propagated) {
+            std::cerr << "task exception was not propagated\n";
+            return 1;
+        }
+    }
+
+    {
+        bool rejected = false;
+        try {
+            sky::ThreadPool invalid(0);
+        } catch (const std::invalid_argument&) {
+            rejected = true;
+        }
+        if (!rejected) {
+            std::cerr << "zero-worker configuration was accepted\n";
+            return 1;
+        }
+    }
+
+    std::cout << "Sky Thread Pool tests passed\n";
     return 0;
 }
